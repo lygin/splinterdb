@@ -660,7 +660,7 @@ platform_assert_msg(platform_log_handle *log_handle,
    platform_log(log_handle,
                 assert_msg_fmt,
                 platform_getpid(),
-                gettid(),
+                0,
                 platform_get_tid(), // SplinterDB's thread-ID (index)
                 filename,
                 linenumber,

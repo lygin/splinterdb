@@ -23,7 +23,7 @@ compile time for the linux platform, you might
 */
 
 #pragma once
-
+#define SPLINTERDB_PLATFORM_DIR platform_linux
 #ifndef SPLINTERDB_PLATFORM_DIR
 #   error Define SPLINTERDB_PLATFORM_DIR for your target, e.g. compile with flag -DSPLINTERDB_PLATFORM_DIR=platform_linux
 #endif
