@@ -8,9 +8,10 @@
  */
 #include <stdio.h>
 #include <string.h>
-
 #include "splinterdb/default_data_config.h"
 #include "splinterdb/splinterdb.h"
+#include <pthread.h>
+#include <stdlib.h>
 
 #define DB_FILE_NAME    "splinterdb_intro_db"
 #define DB_FILE_SIZE_MB 1024 // Size of SplinterDB device; Fixed when created
@@ -19,6 +20,20 @@
 /* Application declares the limit of key-sizes it intends to use */
 #define USER_MAX_KEY_SIZE ((int)100)
 
+typedef struct {  
+   splinterdb *sp1;
+   splinterdb *sp2;
+} thread_param_t;
+
+void* run_thread(void* arg) {
+   thread_param_t* params = (thread_param_t*)arg;  
+   splinterdb_register_thread(params->sp1);
+   splinterdb_register_thread(params->sp2);
+
+   splinterdb_deregister_thread(params->sp1);
+   splinterdb_deregister_thread(params->sp2);
+   return NULL;
+}
 /*
  * -------------------------------------------------------------------------------
  * We, intentionally, do not check for errors or show error handling, as this is
@@ -43,10 +58,22 @@ main()
    splinterdb_cfg.data_cfg   = &splinter_data_cfg;
 
    splinterdb *spl_handle = NULL; // To a running SplinterDB instance
+   splinterdb *spl2 = NULL;
 
    int rc = splinterdb_create(&splinterdb_cfg, &spl_handle);
+   splinterdb_cfg.filename = "newdbv";
+   rc = splinterdb_create(&splinterdb_cfg, &spl2);
    printf("Created SplinterDB instance, dbname '%s'.\n\n", DB_FILE_NAME);
 
+   thread_param_t* params = (thread_param_t*)malloc(sizeof(thread_param_t)); 
+   params->sp1 = spl_handle;
+   params->sp2 = spl2;
+   pthread_t th[16];
+   for (int i=0; i<16; ++i) {
+      pthread_create(&th[i], NULL, run_thread, params);
+   }
+   for(int i=0; i<16; ++i)
+      pthread_join(th[i], NULL);  
    // Insert a few kv-pairs, describing properties of fruits.
    const char *fruit = "apple";
    const char *descr = "An apple a day keeps the doctor away!";
@@ -54,6 +81,7 @@ main()
    slice       value = slice_create((size_t)strlen(descr), descr);
 
    rc = splinterdb_insert(spl_handle, key, value);
+   rc = splinterdb_insert(spl2, key, value);
    printf("Inserted key '%s'\n", fruit);
 
    fruit = "Orange";
@@ -61,6 +89,7 @@ main()
    key   = slice_create((size_t)strlen(fruit), fruit);
    value = slice_create((size_t)strlen(descr), descr);
    rc    = splinterdb_insert(spl_handle, key, value);
+   rc    = splinterdb_insert(spl2, key, value);
    printf("Inserted key '%s'\n", fruit);
 
    fruit = "Mango";
@@ -68,6 +97,7 @@ main()
    key   = slice_create((size_t)strlen(fruit), fruit);
    value = slice_create((size_t)strlen(descr), descr);
    rc    = splinterdb_insert(spl_handle, key, value);
+   rc    = splinterdb_insert(spl2, key, value);
    printf("Inserted key '%s'\n", fruit);
 
    // Retrieve a key-value pair.
@@ -84,7 +114,16 @@ main()
              (int)slice_length(value),
              (char *)slice_data(value));
    }
-
+   splinterdb_lookup_result result2;
+   splinterdb_lookup_result_init(spl2, &result2, 0, NULL);
+   rc    = splinterdb_lookup(spl2, key, &result2);
+   rc    = splinterdb_lookup_result_value(&result2, &value);
+   if (!rc) {
+      printf("Found key: '%s', value: '%.*s'\n",
+             fruit,
+             (int)slice_length(value),
+             (char *)slice_data(value));
+   }
    // Handling non-existent keys
    fruit = "Banana";
    key   = slice_create((size_t)strlen(fruit), fruit);
@@ -97,7 +136,7 @@ main()
 
    printf("Shutdown and reopen SplinterDB instance ...\n");
    splinterdb_close(&spl_handle);
-
+   splinterdb_close(&spl2);
    rc = splinterdb_open(&splinterdb_cfg, &spl_handle);
    if (rc) {
       printf("Error re-opening SplinterDB instance, dbname '%s' (rc=%d).\n",
@@ -132,6 +171,6 @@ main()
 
    splinterdb_close(&spl_handle);
    printf("Shutdown SplinterDB instance, dbname '%s'.\n\n", DB_FILE_NAME);
-
+   
    return rc;
 }

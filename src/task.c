@@ -354,15 +354,30 @@ task_register_thread(task_system *ts,
    // that simulate process-model of execution, we fork() from the main test.
    // Before registration, this 'thread' inherits the thread ID from the main
    // thread, which will be == 0.
-   platform_assert(((thread_tid == INVALID_TID) || (thread_tid == 0)),
+   platform_assert(((thread_tid == INVALID_TID) || (thread_tid == 0) || *task_system_get_tid_bitmask(ts) & (1ULL<<thread_tid)),
                    "[%s:%d::%s()] Attempt to register thread that is already "
-                   "registered as thread %lu\n",
+                   "%p registered as thread %lu status %ld [%ld]\n",
                    file,
                    lineno,
                    func,
-                   thread_tid);
+                   ts,
+                   thread_tid,
+                   *task_system_get_tid_bitmask(ts) & (1ULL<<thread_tid),
+                   *task_system_get_tid_bitmask(ts));
 
-   thread_tid = task_allocate_threadid(ts);
+   if (thread_tid != INVALID_TID && thread_tid != 0) {
+      if (*task_system_get_tid_bitmask(ts) & (1ULL<<thread_tid)) {
+         uint64  *tid_bitmask = task_system_get_tid_bitmask(ts);
+         uint64   old_bitmask;
+         uint64   new_bitmask;
+         do {
+            old_bitmask = *tid_bitmask;
+            new_bitmask = (old_bitmask & ~(1ULL << (thread_tid)));
+         } while(!__sync_bool_compare_and_swap(tid_bitmask, old_bitmask, new_bitmask));
+      }
+   } else {
+      thread_tid = task_allocate_threadid(ts);
+   }
    // Unavailable threads is a temporary state that could go away.
    if (thread_tid == INVALID_TID) {
       return STATUS_BUSY;
@@ -383,6 +398,7 @@ task_register_thread(task_system *ts,
 
    platform_set_tid(thread_tid);
    task_run_thread_hooks(ts);
+   platform_error_log("%p Registered thread %lu ok %ld\n", ts, thread_tid, *task_system_get_tid_bitmask(ts) & (1ULL<<thread_tid));
 
    return STATUS_OK;
 }
@@ -402,9 +418,10 @@ task_deregister_thread(task_system *ts,
                        const char  *func)
 {
    threadid tid = platform_get_tid();
+   platform_error_log("%p Dergistered thread %lu ok %ld\n", ts, tid, *task_system_get_tid_bitmask(ts) & (1ULL<<tid));
 
    platform_assert(
-      tid != INVALID_TID,
+      tid != INVALID_TID && (*task_system_get_tid_bitmask(ts) & (1ULL<<tid)) == 0,
       "[%s:%d::%s()] Error! Attempt to deregister unregistered thread.\n",
       file,
       lineno,
@@ -419,7 +436,6 @@ task_deregister_thread(task_system *ts,
    }
 
    task_system_io_deregister_thread(ts);
-   platform_set_tid(INVALID_TID);
    task_deallocate_threadid(ts, tid); // allow thread id to be re-used
 }
 

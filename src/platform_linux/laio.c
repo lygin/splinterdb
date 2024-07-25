@@ -272,10 +272,21 @@ laio_read(io_handle *ioh, void *buf, uint64 bytes, uint64 addr)
    int          ret;
 
    io  = (laio_handle *)ioh;
-   ret = pread(io->fd, buf, bytes, addr);
-   if (ret == bytes) {
-      return STATUS_OK;
+   int retry = 5;
+   while(retry > 0) {
+      ret = pread(io->fd, buf, bytes, addr);
+      if (ret < 0) break;
+      bytes -= ret;
+      addr += ret;
+      buf = (char *)buf + ret;
+      if (0 == bytes) {
+         return STATUS_OK;
+      }
+      retry--;
    }
+   struct stat statbuf;
+   fstat(io->fd, &statbuf);
+   printf("retry %d remain_bytes %ld addr %ld file size %ld ret%d\n", retry, bytes, addr, statbuf.st_size, ret);
    return STATUS_IO_ERROR;
 }
 

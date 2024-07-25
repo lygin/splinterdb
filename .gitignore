@@ -1,6 +1,5 @@
 .idea/
 cmake-build-debug/
-CMakeLists.txt
 .libconfig.mk
 .release
 .debug
